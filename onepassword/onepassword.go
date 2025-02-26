@@ -87,6 +87,17 @@ func (h *OnePassword) Delete(serverURL string) error {
 		h = newHelper
 	}
 
+	shouldReturn, err := hydrateItemIDByURL(h, serverURL)
+	if !shouldReturn {
+		return err
+	}
+
+	//TODO: Confirm this is actually doing something  i ran out of time
+	err = h.client.Items.Delete(context.Background(), h.vaultID, h.itemID)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -108,27 +119,9 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 	println("Getting item ID by Website")
 
 	if h.itemID == "" {
-		items, err := h.client.Items.ListAll(context.Background(), h.vaultID)
-		if err != nil {
-			panic(err)
-		}
-
-		for {
-			item, err := items.Next()
-			if errors.Is(err, onepassword.ErrorIteratorDone) {
-				break
-			} else if err != nil {
-				return "", "", err
-			}
-
-			for _, website := range item.Websites {
-				if website.URL == serverURL {
-					fmt.Printf("Found item ID: %s\n", item.ID)
-					fmt.Printf("%s %s\n", item.ID, item.Title)
-					h.itemID = item.ID
-					break
-				}
-			}
+		shouldReturn, err := hydrateItemIDByURL(h, serverURL)
+		if !shouldReturn {
+			return "", "", err
 		}
 
 		// ok now we have the item ID
@@ -159,6 +152,32 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 	}
 
 	return "", "", nil
+}
+
+func hydrateItemIDByURL(h *OnePassword, serverURL string) (bool, error) {
+	items, err := h.client.Items.ListAll(context.Background(), h.vaultID)
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		item, err := items.Next()
+		if errors.Is(err, onepassword.ErrorIteratorDone) {
+			break
+		} else if err != nil {
+			return true, err
+		}
+
+		for _, website := range item.Websites {
+			if website.URL == serverURL {
+				fmt.Printf("Found item ID: %s\n", item.ID)
+				fmt.Printf("%s %s\n", item.ID, item.Title)
+				h.itemID = item.ID
+				break
+			}
+		}
+	}
+	return false, nil
 }
 
 // List returns the stored URLs and corresponding usernames.
