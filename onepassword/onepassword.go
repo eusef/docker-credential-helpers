@@ -3,11 +3,13 @@
 package onepassword
 
 import (
-    "context"
-    "os"
+	"context"
+	"errors"
+	"fmt"
+	"os"
 
-    "github.com/docker/docker-credential-helpers/credentials"
-    "github.com/1password/onepassword-sdk-go"
+	"github.com/1password/onepassword-sdk-go"
+	"github.com/docker/docker-credential-helpers/credentials"
 )
 
 // This script assumes you have a 1Password Service Account Token
@@ -17,54 +19,102 @@ import (
 
 // OnePassword implements the credentials.Helper interface
 type OnePassword struct {
-    client *onepassword.Client    
+	client  *onepassword.Client
+	token   string
+	vaultId string
 }
 
 // NewOnePasswordHelper creates a new OnePasswordHelper with the given client.
-func NewOnePasswordHelper(client *onepassword.Client) *OnePassword {
-    return &OnePassword{client: client}
+func NewOnePasswordHelper() (*OnePassword, error) {
+	token := os.Getenv("OP_SERVICE_ACCOUNT_TOKEN")
+	if token == "" {
+		return nil, fmt.Errorf("OP_SERVICE_ACCOUNT_TOKEN environment variable is not set")
+	}
+	fmt.Printf("Token: %s\n", token)
+
+	vaultId := os.Getenv("OP_VAULT_ID")
+	if vaultId == "" {
+		return nil, fmt.Errorf("OP_VAULT_ID environment variable is not set")
+	}
+	fmt.Printf("Vault ID: %s\n", vaultId)
+
+	client, err := onepassword.NewClient(
+		context.TODO(),
+		onepassword.WithServiceAccountToken(token),
+		// TODO: Set the following to your own integration name and version.
+		onepassword.WithIntegrationInfo("1Password Docker Credential Helper", "v0.0.1"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create 1Password client: %w", err)
+	}
+
+	return &OnePassword{
+		client:  client,
+		token:   token,
+		vaultId: vaultId,
+	}, nil
 }
 
 // Add adds new credentials to the store.
 func (h OnePassword) Add(creds *credentials.Credentials) error {
-    // TODO: Implement this method
-    return nil
+	// TODO: Implement this method
+	return nil
 }
 
 // Delete removes credentials from the store.
 func (h OnePassword) Delete(serverURL string) error {
-    // TODO: Implement this method
-    return nil
+	// TODO: Implement this method
+	return nil
 }
 
 // Get retrieves credentials from the store.
 func (h OnePassword) Get(serverURL string) (string, string, error) {
-    // TODO: Implement this method
-    return "", "", nil
+	// TODO: Implement this method
+	return "", "", nil
 }
 
 // List returns the stored URLs and corresponding usernames.
 func (h OnePassword) List() (map[string]string, error) {
-    items, err := h.client.GetItems(context.Background())
-    if err != nil {
-        return nil, err
-    }
+	h, err := NewOnePassword()
+	if err != nil {
+		return nil, err
+	}
 
-    credentialsMap := make(map[string]string)
-    for _, item := range items {
-        if item.Type != "login" {
-            fmt.Printf("item type %s is not supported", item.type)
-            // return nil, fmt.Errorf("item type %s is not supported", item.type)
-        } else {
-            credentialsMap[item.Username] = item.Username
-            credentialsMap[item.Password] = item.Password
-            credentialsMap[item.URL] = item.URL
-        }
+	if h.vaultId == "" {
+		return nil, fmt.Errorf("OP_VAULT_ID environment variable is not set")
+	}
 
-        
-    }
+	client, err := onepassword.NewClient(
+		context.TODO(),
+		onepassword.WithServiceAccountToken(h.token),
+		// TODO: Set the following to your own integration name and version.
+		onepassword.WithIntegrationInfo("1Password Docker Credential Helper", "v0.0.1"),
+	)
+	if err == nil {
+		return nil, fmt.Errorf("1Password client is not initialized")
+	}
 
-    return credentialsMap, nil
+	items, err := client.Items.ListAll(context.Background(), h.vaultId)
+	if err != nil {
+		panic(err)
+	}
+
+	credentialsMap := make(map[string]string)
+	for {
+		item, err := items.Next()
+		if errors.Is(err, onepassword.ErrorIteratorDone) {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+		fmt.Printf("%s %s\n", item.ID, item.Title)
+
+		credentialsMap["id"] = item.ID
+		credentialsMap["title"] = item.Title
+		credentialsMap["vaultid"] = item.VaultID
+		credentialsMap["category"] = string(item.Category)
+		credentialsMap["website"] = item.Websites[len(item.Websites)-1].URL
+	}
+
+	return credentialsMap, nil
 }
-
-

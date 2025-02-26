@@ -23,7 +23,7 @@ clean:
 	rm -rf bin
 
 .PHONY: build-%
-build-%: # build, can be one of build-osxkeychain build-pass build-secretservice build-wincred, build-1password
+build-%: # build, can be one of build-osxkeychain build-pass build-secretservice build-wincred, build-onepassword
 	go build -trimpath -ldflags="$(GO_LDFLAGS) -X ${GO_PKG}/credentials.Name=docker-credential-$*" -o "$(DESTDIR)/docker-credential-$*" ./$*/cmd/
 
 # aliases for build-* targets
