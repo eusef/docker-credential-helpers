@@ -74,27 +74,17 @@ func (h OnePassword) Get(serverURL string) (string, string, error) {
 }
 
 // List returns the stored URLs and corresponding usernames.
-func (h OnePassword) List() (map[string]string, error) {
-	h, err := NewOnePassword()
-	if err != nil {
-		return nil, err
+func (h *OnePassword) List() (map[string]string, error) {
+	if h == nil {
+		println("Creating new helper")
+		newHelper, err := NewOnePasswordHelper()
+		if err != nil {
+			return nil, err
+		}
+		h = newHelper
 	}
 
-	if h.vaultId == "" {
-		return nil, fmt.Errorf("OP_VAULT_ID environment variable is not set")
-	}
-
-	client, err := onepassword.NewClient(
-		context.TODO(),
-		onepassword.WithServiceAccountToken(h.token),
-		// TODO: Set the following to your own integration name and version.
-		onepassword.WithIntegrationInfo("1Password Docker Credential Helper", "v0.0.1"),
-	)
-	if err == nil {
-		return nil, fmt.Errorf("1Password client is not initialized")
-	}
-
-	items, err := client.Items.ListAll(context.Background(), h.vaultId)
+	items, err := h.client.Items.ListAll(context.Background(), h.vaultId)
 	if err != nil {
 		panic(err)
 	}
@@ -113,7 +103,12 @@ func (h OnePassword) List() (map[string]string, error) {
 		credentialsMap["title"] = item.Title
 		credentialsMap["vaultid"] = item.VaultID
 		credentialsMap["category"] = string(item.Category)
-		credentialsMap["website"] = item.Websites[len(item.Websites)-1].URL
+
+		for index, website := range item.Websites {
+			fmt.Printf("Website: %s\n", website.URL)
+			credentialsMap["website"+fmt.Sprint(index)] = website.URL
+		}
+
 	}
 
 	return credentialsMap, nil
