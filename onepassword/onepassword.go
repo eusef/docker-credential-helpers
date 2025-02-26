@@ -21,7 +21,8 @@ import (
 type OnePassword struct {
 	client  *onepassword.Client
 	token   string
-	vaultId string
+	vaultID string
+	itemID  string
 }
 
 // NewOnePasswordHelper creates a new OnePasswordHelper with the given client.
@@ -48,28 +49,115 @@ func NewOnePasswordHelper() (*OnePassword, error) {
 		return nil, fmt.Errorf("failed to create 1Password client: %w", err)
 	}
 
+	fmt.Printf("1Password Client Created\n")
+
 	return &OnePassword{
 		client:  client,
 		token:   token,
-		vaultId: vaultId,
+		vaultID: vaultId,
 	}, nil
 }
 
 // Add adds new credentials to the store.
-func (h OnePassword) Add(creds *credentials.Credentials) error {
-	// TODO: Implement this method
+func (h *OnePassword) Add(creds *credentials.Credentials) error {
+	println("Adding credentials for Creds: %s", creds.ServerURL)
+
+	if h == nil {
+		println("Creating new helper")
+		newHelper, err := NewOnePasswordHelper()
+		if err != nil {
+			return err
+		}
+		h = newHelper
+	}
+
 	return nil
 }
 
 // Delete removes credentials from the store.
-func (h OnePassword) Delete(serverURL string) error {
-	// TODO: Implement this method
+func (h *OnePassword) Delete(serverURL string) error {
+	println("Deleting credentials for Website: %s", serverURL)
+
+	if h == nil {
+		println("Creating new helper")
+		newHelper, err := NewOnePasswordHelper()
+		if err != nil {
+			return err
+		}
+		h = newHelper
+	}
+
 	return nil
 }
 
 // Get retrieves credentials from the store.
-func (h OnePassword) Get(serverURL string) (string, string, error) {
-	// TODO: Implement this method
+func (h *OnePassword) Get(serverURL string) (string, string, error) {
+	println("Getting credentials for Website: %s", serverURL)
+	if h == nil {
+		println("Creating new helper")
+		newHelper, err := NewOnePasswordHelper()
+		if err != nil {
+			return "", "", err
+		}
+		h = newHelper
+	}
+
+	// Get the item ID if it is not already set
+	// This is a backward reference by website (which is what Docker is looking for)
+	// src - https://pkg.go.dev/github.com/docker/docker-credential-helpers/client
+	println("Getting item ID by Website")
+
+	if h.itemID == "" {
+		items, err := h.client.Items.ListAll(context.Background(), h.vaultID)
+		if err != nil {
+			panic(err)
+		}
+
+		for {
+			item, err := items.Next()
+			if errors.Is(err, onepassword.ErrorIteratorDone) {
+				break
+			} else if err != nil {
+				return "", "", err
+			}
+
+			for _, website := range item.Websites {
+				if website.URL == serverURL {
+					fmt.Printf("Found item ID: %s\n", item.ID)
+					fmt.Printf("%s %s\n", item.ID, item.Title)
+					h.itemID = item.ID
+					break
+				}
+			}
+		}
+
+		// ok now we have the item ID
+		// we can get the username and password
+
+		item, err := h.client.Items.Get(context.Background(), h.vaultID, h.itemID)
+		if err != nil {
+			panic(err)
+		}
+
+		if item.Category == onepassword.ItemCategoryLogin {
+			println("Item: Title: %s", item.Title)
+			var username, password string
+			for _, field := range item.Fields {
+				if field.Title == "username" {
+					username = field.Value
+				} else if field.Title == "password" {
+					password = field.Value
+				}
+			}
+			if username == "" || password == "" {
+				return "", "", fmt.Errorf("username or password field is missing")
+			}
+			return username, password, nil
+		} else {
+			return "", "", fmt.Errorf("item is not a login item")
+		}
+	}
+
 	return "", "", nil
 }
 
@@ -84,7 +172,7 @@ func (h *OnePassword) List() (map[string]string, error) {
 		h = newHelper
 	}
 
-	items, err := h.client.Items.ListAll(context.Background(), h.vaultId)
+	items, err := h.client.Items.ListAll(context.Background(), h.vaultID)
 	if err != nil {
 		panic(err)
 	}
