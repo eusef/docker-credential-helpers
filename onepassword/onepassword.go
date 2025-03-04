@@ -16,6 +16,8 @@ import (
 // stored in the environment variable `SERVICE_ACCOUNT_TOKEN`.
 // This token has access to a specific vault specifed by the
 // environment variable `VAULT_ID`.
+//
+// Usage: echo https://docker.com | ./bin/build/docker-credential-onepassword get
 
 // OnePassword implements the credentials.Helper interface
 type OnePassword struct {
@@ -71,6 +73,66 @@ func (h *OnePassword) Add(creds *credentials.Credentials) error {
 		h = newHelper
 	}
 
+	// [developer-docs.sdk.go.create-item]-start
+	sectionID := "extraDetails"
+	itemParams := onepassword.ItemCreateParams{
+		Title:    "Login created with the 1Password SDK",
+		Category: onepassword.ItemCategoryLogin,
+		VaultID:  h.vaultID,
+		Fields: []onepassword.ItemField{
+			{
+				ID:        "username",
+				Title:     "username",
+				Value:     creds.Username,
+				FieldType: onepassword.ItemFieldTypeText,
+			},
+			{
+				ID:        "password",
+				Title:     "password",
+				Value:     creds.Secret,
+				FieldType: onepassword.ItemFieldTypeConcealed,
+			},
+		},
+		Sections: []onepassword.ItemSection{
+			{
+				ID:    sectionID,
+				Title: "This item stores Credentials for a Docker Archive",
+			},
+		},
+		Tags: []string{"Docker Credential Helper", "Docker"},
+		Websites: []onepassword.Website{
+			{
+				URL:              creds.ServerURL,
+				AutofillBehavior: onepassword.AutofillBehaviorAnywhereOnWebsite,
+				Label:            "Docker Archive",
+			},
+		},
+	}
+
+	// Creates a new item based on the structure definition above
+	createdItem, err := h.client.Items.Create(context.Background(), itemParams)
+	if err != nil {
+		return err
+	}
+
+	// Retrieves the newly created item
+	login, err := h.client.Items.Get(context.Background(), createdItem.VaultID, createdItem.ID)
+	if err != nil {
+		return err
+	}
+
+	// Retrieve TOTP code from an item
+	for _, f := range login.Fields {
+		if f.FieldType == onepassword.ItemFieldTypeTOTP {
+			OTPFieldDetails := f.Details.OTP()
+			if OTPFieldDetails.ErrorMessage == nil {
+				fmt.Println(*OTPFieldDetails.Code)
+			} else {
+				panic(*OTPFieldDetails.ErrorMessage)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -92,7 +154,6 @@ func (h *OnePassword) Delete(serverURL string) error {
 		return err
 	}
 
-	//TODO: Confirm this is actually doing something  i ran out of time
 	err = h.client.Items.Delete(context.Background(), h.vaultID, h.itemID)
 	if err != nil {
 		return err
