@@ -110,13 +110,13 @@ func (h *OnePassword) Add(creds *credentials.Credentials) error {
 	}
 
 	// Creates a new item based on the structure definition above
-	createdItem, err := h.client.Items.Create(context.Background(), itemParams)
+	createdItem, err := h.client.Items().Create(context.Background(), itemParams)
 	if err != nil {
 		return err
 	}
 
 	// Retrieves the newly created item
-	login, err := h.client.Items.Get(context.Background(), createdItem.VaultID, createdItem.ID)
+	login, err := h.client.Items().Get(context.Background(), createdItem.VaultID, createdItem.ID)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func (h *OnePassword) Delete(serverURL string) error {
 		return err
 	}
 
-	err = h.client.Items.Delete(context.Background(), h.vaultID, h.itemID)
+	err = h.client.Items().Delete(context.Background(), h.vaultID, h.itemID)
 	if err != nil {
 		return err
 	}
@@ -188,7 +188,7 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 		// ok now we have the item ID
 		// we can get the username and password
 
-		item, err := h.client.Items.Get(context.Background(), h.vaultID, h.itemID)
+		item, err := h.client.Items().Get(context.Background(), h.vaultID, h.itemID)
 		if err != nil {
 			panic(err)
 		}
@@ -216,7 +216,7 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 }
 
 func hydrateItemIDByURL(h *OnePassword, serverURL string) (bool, error) {
-	items, err := h.client.Items.ListAll(context.Background(), h.vaultID)
+	items, err := h.client.Items().ListAll(context.Background(), h.vaultID)
 	if err != nil {
 		panic(err)
 	}
@@ -252,7 +252,7 @@ func (h *OnePassword) List() (map[string]string, error) {
 		h = newHelper
 	}
 
-	items, err := h.client.Items.ListAll(context.Background(), h.vaultID)
+	items, err := h.client.Items().ListAll(context.Background(), h.vaultID)
 	if err != nil {
 		panic(err)
 	}
