@@ -18,6 +18,9 @@ import (
 // environment variable `VAULT_ID`.
 //
 // Usage: echo https://docker.com | ./bin/build/docker-credential-onepassword get
+// Usage: echo echo '{"ServerURL":"https://example.com","Username":"myuser","Secret":"mypassword"}' |  ./bin/build/docker-credential-onepassword store
+// Usage: echo https://example.com | ./bin/build/docker-credential-onepassword erase
+// Usage: ./bin/build/docker-credential-onepassword list
 
 // OnePassword implements the credentials.Helper interface
 type OnePassword struct {
@@ -29,17 +32,18 @@ type OnePassword struct {
 
 // NewOnePasswordHelper creates a new OnePasswordHelper with the given client.
 func NewOnePasswordHelper() (*OnePassword, error) {
+	fmt.Printf("Creating new helper\n")
 	token := os.Getenv("OP_SERVICE_ACCOUNT_TOKEN")
 	if token == "" {
 		return nil, fmt.Errorf("OP_SERVICE_ACCOUNT_TOKEN environment variable is not set")
 	}
-	fmt.Printf("Token: %s\n", token)
+	fmt.Printf("- Using token from Environment\n")
 
 	vaultId := os.Getenv("OP_VAULT_ID")
 	if vaultId == "" {
 		return nil, fmt.Errorf("OP_VAULT_ID environment variable is not set")
 	}
-	fmt.Printf("Vault ID: %s\n", vaultId)
+	fmt.Printf("- Using Vault ID from Environment\n")
 
 	client, err := onepassword.NewClient(
 		context.TODO(),
@@ -51,7 +55,7 @@ func NewOnePasswordHelper() (*OnePassword, error) {
 		return nil, fmt.Errorf("failed to create 1Password client: %w", err)
 	}
 
-	fmt.Printf("1Password Client Created\n")
+	fmt.Printf("- 1Password Client Created\n")
 
 	return &OnePassword{
 		client:  client,
@@ -62,10 +66,9 @@ func NewOnePasswordHelper() (*OnePassword, error) {
 
 // Add adds new credentials to the store.
 func (h *OnePassword) Add(creds *credentials.Credentials) error {
-	println("Adding credentials for Creds: %s", creds.ServerURL)
+	fmt.Printf("Add: Adding credentials for Creds: %s\n", creds.ServerURL)
 
 	if h == nil {
-		println("Creating new helper")
 		newHelper, err := NewOnePasswordHelper()
 		if err != nil {
 			return err
@@ -73,7 +76,6 @@ func (h *OnePassword) Add(creds *credentials.Credentials) error {
 		h = newHelper
 	}
 
-	// [developer-docs.sdk.go.create-item]-start
 	sectionID := "extraDetails"
 	itemParams := onepassword.ItemCreateParams{
 		Title:    "Login created with the 1Password SDK",
@@ -121,27 +123,16 @@ func (h *OnePassword) Add(creds *credentials.Credentials) error {
 		return err
 	}
 
-	// Retrieve TOTP code from an item
-	for _, f := range login.Fields {
-		if f.FieldType == onepassword.ItemFieldTypeTOTP {
-			OTPFieldDetails := f.Details.OTP()
-			if OTPFieldDetails.ErrorMessage == nil {
-				fmt.Println(*OTPFieldDetails.Code)
-			} else {
-				panic(*OTPFieldDetails.ErrorMessage)
-			}
-		}
-	}
+	fmt.Printf("- Item created: %s\n", login.ID)
 
 	return nil
 }
 
 // Delete removes credentials from the store.
 func (h *OnePassword) Delete(serverURL string) error {
-	println("Deleting credentials for Website: %s", serverURL)
+	fmt.Printf("Deleting credentials for Website: %s\n", serverURL)
 
 	if h == nil {
-		println("Creating new helper")
 		newHelper, err := NewOnePasswordHelper()
 		if err != nil {
 			return err
@@ -164,9 +155,8 @@ func (h *OnePassword) Delete(serverURL string) error {
 
 // Get retrieves credentials from the store.
 func (h *OnePassword) Get(serverURL string) (string, string, error) {
-	println("Getting credentials for Website: %s", serverURL)
+	fmt.Printf("Getting credentials for Website: %s\n", serverURL)
 	if h == nil {
-		println("Creating new helper")
 		newHelper, err := NewOnePasswordHelper()
 		if err != nil {
 			return "", "", err
@@ -177,7 +167,7 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 	// Get the item ID if it is not already set
 	// This is a backward reference by website (which is what Docker is looking for)
 	// src - https://pkg.go.dev/github.com/docker/docker-credential-helpers/client
-	println("Getting item ID by Website")
+	fmt.Printf("- Getting item ID by Website\n")
 
 	if h.itemID == "" {
 		shouldReturn, err := hydrateItemIDByURL(h, serverURL)
@@ -194,7 +184,7 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 		}
 
 		if item.Category == onepassword.ItemCategoryLogin {
-			println("Item: Title: %s", item.Title)
+			fmt.Printf("Item: Title: %s\n", item.Title)
 			var username, password string
 			for _, field := range item.Fields {
 				if field.Title == "username" {
@@ -216,6 +206,8 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 }
 
 func hydrateItemIDByURL(h *OnePassword, serverURL string) (bool, error) {
+	fmt.Printf("Hydrating item ID by URL: %s\n", serverURL)
+
 	items, err := h.client.Items().ListAll(context.Background(), h.vaultID)
 	if err != nil {
 		panic(err)
@@ -223,18 +215,20 @@ func hydrateItemIDByURL(h *OnePassword, serverURL string) (bool, error) {
 
 	for {
 		item, err := items.Next()
+
+		fmt.Printf("\n\nITEM: %s\n\n\n", item)
+
 		if errors.Is(err, onepassword.ErrorIteratorDone) {
 			break
 		} else if err != nil {
-			return true, err
+			return false, err
 		}
 
 		for _, website := range item.Websites {
 			if website.URL == serverURL {
-				fmt.Printf("Found item ID: %s\n", item.ID)
-				fmt.Printf("%s %s\n", item.ID, item.Title)
+				fmt.Printf("- Found item ID: %s - %s\n", item.ID, item.Websites[0].URL)
 				h.itemID = item.ID
-				break
+				return true, nil
 			}
 		}
 	}
@@ -244,7 +238,6 @@ func hydrateItemIDByURL(h *OnePassword, serverURL string) (bool, error) {
 // List returns the stored URLs and corresponding usernames.
 func (h *OnePassword) List() (map[string]string, error) {
 	if h == nil {
-		println("Creating new helper")
 		newHelper, err := NewOnePasswordHelper()
 		if err != nil {
 			return nil, err
