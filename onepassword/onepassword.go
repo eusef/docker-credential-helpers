@@ -184,7 +184,7 @@ func (h *OnePassword) Get(serverURL string) (string, string, error) {
 		}
 
 		if item.Category == onepassword.ItemCategoryLogin {
-			fmt.Printf("Item: Title: %s\n", item.Title)
+			fmt.Printf("- Item Title: %s\n", item.Title)
 			var username, password string
 			for _, field := range item.Fields {
 				if field.Title == "username" {
@@ -216,12 +216,18 @@ func hydrateItemIDByURL(h *OnePassword, serverURL string) (bool, error) {
 	for {
 		item, err := items.Next()
 
-		fmt.Printf("\n\nITEM: %s\n\n\n", item)
-
 		if errors.Is(err, onepassword.ErrorIteratorDone) {
 			break
 		} else if err != nil {
 			return false, err
+		}
+
+		// detect if item is active // TODO: Fix this later once we have a better way to detect active items
+		fullItem, err := h.client.Items().Get(context.Background(), h.vaultID, item.ID)
+		if err != nil {
+			// Item not active. Skip
+			fmt.Printf("- Item not active. Skipping: %s\n", fullItem.ID)
+			break
 		}
 
 		for _, website := range item.Websites {
@@ -232,7 +238,8 @@ func hydrateItemIDByURL(h *OnePassword, serverURL string) (bool, error) {
 			}
 		}
 	}
-	return false, nil
+
+	return false, fmt.Errorf("Credentials not found for Website: %s", serverURL)
 }
 
 // List returns the stored URLs and corresponding usernames.
@@ -258,16 +265,20 @@ func (h *OnePassword) List() (map[string]string, error) {
 		} else if err != nil {
 			return nil, err
 		}
-		fmt.Printf("%s %s\n", item.ID, item.Title)
+		fmt.Printf("-- %s %s\n", item.ID, item.Title)
 
 		credentialsMap["id"] = item.ID
 		credentialsMap["title"] = item.Title
 		credentialsMap["vaultid"] = item.VaultID
 		credentialsMap["category"] = string(item.Category)
 
-		for index, website := range item.Websites {
-			fmt.Printf("Website: %s\n", website.URL)
-			credentialsMap["website"+fmt.Sprint(index)] = website.URL
+		// Not sure if this is the right way to do this
+		// Docker does not support multiple websites, but 1Password does.
+		// anyway, i just grab the first website
+		for _, website := range item.Websites {
+			fmt.Printf("- Website: %s\n", website.URL)
+			credentialsMap["website"] = website.URL
+			break
 		}
 
 	}
